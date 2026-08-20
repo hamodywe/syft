@@ -326,3 +326,30 @@ func TestJvmDistributionCatalogerFromFile(t *testing.T) {
 	}
 
 }
+
+func Test_GradleLockfileCataloger_Globs(t *testing.T) {
+	tests := []struct {
+		name     string
+		fixture  string
+		expected []string
+	}{
+		{
+			name:    "obtain gradle lockfiles",
+			fixture: "testdata/glob-paths",
+			expected: []string{
+				"gradle/gradle.lockfile",
+				// written by the gradle-consistent-versions plugin
+				"gradle/versions.lock",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			pkgtest.NewCatalogTester().
+				FromDirectory(t, test.fixture).
+				ExpectsResolverContentQueries(test.expected).
+				TestCataloger(t, NewGradleLockfileCataloger())
+		})
+	}
+}

@@ -48,29 +48,35 @@ func parseGradleLockfile(_ context.Context, _ file.Resolver, _ *generic.Environm
 
 	// map the dependencies
 	for _, dep := range dependencies {
-		archive := pkg.JavaArchive{
-			PomProject: &pkg.JavaPomProject{
-				GroupID:    dep.Group,
-				ArtifactID: dep.Name,
-				Version:    dep.Version,
-				Name:       dep.Name,
-			},
-		}
-
-		mappedPkg := pkg.Package{
-			Name:    dep.Name,
-			Version: dep.Version,
-			Locations: file.NewLocationSet(
-				reader.WithAnnotation(pkg.EvidenceAnnotationKey, pkg.PrimaryEvidenceAnnotation),
-			),
-			Language: pkg.Java,
-			Type:     pkg.JavaPkg,
-			PURL:     packageURL(dep.Name, dep.Version, archive),
-			Metadata: archive,
-		}
-		mappedPkg.SetID()
-		pkgs = append(pkgs, mappedPkg)
+		pkgs = append(pkgs, newGradleLockfilePackage(dep, reader))
 	}
 
 	return pkgs, nil, nil
+}
+
+// newGradleLockfilePackage maps a group/artifact/version triple read from a gradle lockfile onto a package.
+func newGradleLockfilePackage(dep lockfileDependency, reader file.LocationReadCloser) pkg.Package {
+	archive := pkg.JavaArchive{
+		PomProject: &pkg.JavaPomProject{
+			GroupID:    dep.Group,
+			ArtifactID: dep.Name,
+			Version:    dep.Version,
+			Name:       dep.Name,
+		},
+	}
+
+	mappedPkg := pkg.Package{
+		Name:    dep.Name,
+		Version: dep.Version,
+		Locations: file.NewLocationSet(
+			reader.WithAnnotation(pkg.EvidenceAnnotationKey, pkg.PrimaryEvidenceAnnotation),
+		),
+		Language: pkg.Java,
+		Type:     pkg.JavaPkg,
+		PURL:     packageURL(dep.Name, dep.Version, archive),
+		Metadata: archive,
+	}
+	mappedPkg.SetID()
+
+	return mappedPkg
 }
