@@ -192,6 +192,133 @@ func Test_extractMetadata(t *testing.T) {
 	}
 }
 
+func Test_primaryPackagePurpose(t *testing.T) {
+	tests := []struct {
+		name     string
+		pkg      spdx.Package
+		expected string
+	}{
+		{
+			name: "a declared purpose is used as-is",
+			pkg: spdx.Package{
+				PackageSPDXIdentifier: "DocumentRoot-Directory-some-path",
+				PrimaryPackagePurpose: spdxPrimaryPurposeContainer,
+			},
+			expected: spdxPrimaryPurposeContainer,
+		},
+		{
+			name: "an image document root without a declared purpose is a container",
+			pkg: spdx.Package{
+				PackageSPDXIdentifier: "DocumentRoot-Image-alpine",
+			},
+			expected: spdxPrimaryPurposeContainer,
+		},
+		{
+			name: "a snap document root without a declared purpose is a container",
+			pkg: spdx.Package{
+				PackageSPDXIdentifier: "DocumentRoot-Snap-some-snap",
+			},
+			expected: spdxPrimaryPurposeContainer,
+		},
+		{
+			name: "a directory document root without a declared purpose is a file",
+			pkg: spdx.Package{
+				PackageSPDXIdentifier: "DocumentRoot-Directory-some-path",
+			},
+			expected: spdxPrimaryPurposeFile,
+		},
+		{
+			name: "a file document root without a declared purpose is a file",
+			pkg: spdx.Package{
+				PackageSPDXIdentifier: "DocumentRoot-File-some-binary",
+			},
+			expected: spdxPrimaryPurposeFile,
+		},
+		{
+			name: "an unknown document root is left alone",
+			pkg: spdx.Package{
+				PackageSPDXIdentifier: "DocumentRoot-Unknown-thing",
+			},
+			expected: "",
+		},
+		{
+			name: "a package from another tool is left alone",
+			pkg: spdx.Package{
+				PackageSPDXIdentifier: "Package-busybox-1234",
+			},
+			expected: "",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, test.expected, primaryPackagePurpose(&test.pkg))
+		})
+	}
+}
+
+func Test_extractSourceWithoutPrimaryPackagePurpose(t *testing.T) {
+	// SPDX 2.1 and 2.2 have no primaryPackagePurpose field, so a document syft
+	// wrote at those versions describes its root package with the identifier
+	// alone.
+	documentRoot := &spdx.Package{
+		PackageSPDXIdentifier: "DocumentRoot-Directory-some-path",
+		PackageName:           "some/path",
+		PackageSupplier:       &common.Supplier{Supplier: "NOASSERTION"},
+	}
+	otherPackage := &spdx.Package{
+		PackageSPDXIdentifier: "Package-python-package-1",
+		PackageName:           "package-1",
+	}
+	doc := &spdx.Document{
+		DocumentNamespace: "https://anchore.com/syft/dir/some-path-1234",
+		Packages:          []*spdx.Package{documentRoot, otherPackage},
+		Relationships: []*spdx.Relationship{
+			{
+				RefA:         common.DocElementID{ElementRefID: "DOCUMENT"},
+				RefB:         common.DocElementID{ElementRefID: documentRoot.PackageSPDXIdentifier},
+				Relationship: spdx.RelationshipDescribes,
+			},
+		},
+	}
+
+	spdxIDMap := make(map[string]any)
+	src := extractSource(spdxIDMap, doc)
+
+	assert.Equal(t, "some/path", src.Name)
+	assert.IsType(t, source.DirectoryMetadata{}, src.Metadata)
+	assert.Equal(t, []*spdx.Package{otherPackage}, doc.Packages, "the document root must not remain a package")
+	assert.Contains(t, spdxIDMap, string(documentRoot.PackageSPDXIdentifier))
+}
+
+func Test_extractSourceLeavesAnotherToolsRootPackageAlone(t *testing.T) {
+	// a document from another tool describes a real package, which must stay in
+	// the package list even though it carries no primaryPackagePurpose
+	described := &spdx.Package{
+		PackageSPDXIdentifier: "Package-busybox-1234",
+		PackageName:           "busybox",
+	}
+	doc := &spdx.Document{
+		DocumentNamespace: "https://another-host/blob/123",
+		Packages:          []*spdx.Package{described},
+		Relationships: []*spdx.Relationship{
+			{
+				RefA:         common.DocElementID{ElementRefID: "DOCUMENT"},
+				RefB:         common.DocElementID{ElementRefID: described.PackageSPDXIdentifier},
+				Relationship: spdx.RelationshipDescribes,
+			},
+		},
+	}
+
+	spdxIDMap := make(map[string]any)
+	src := extractSource(spdxIDMap, doc)
+
+	assert.Empty(t, src.Name)
+	assert.Equal(t, []*spdx.Package{described}, doc.Packages)
+	assert.Empty(t, spdxIDMap)
+}
+
+
 func TestExtractSourceFromNamespaces(t *testing.T) {
 	tests := []struct {
 		namespace string

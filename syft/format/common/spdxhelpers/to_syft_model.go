@@ -114,7 +114,7 @@ func extractSource(spdxIDMap map[string]any, doc *spdx.Document) source.Descript
 
 	p := rootPackages[0]
 
-	switch p.PrimaryPackagePurpose {
+	switch primaryPackagePurpose(p) {
 	case spdxPrimaryPurposeContainer:
 		src = containerSource(p)
 	case spdxPrimaryPurposeFile:
@@ -169,9 +169,47 @@ func containerSource(p *spdx.Package) source.Description {
 	}
 }
 
+// documentRootIDPattern matches the identifier syft gives the package that
+// stands in for the scan target, which carries the kind of source it was.
+var documentRootIDPattern = regexp.MustCompile(`^DocumentRoot-([^-]+)-`)
+
+// documentRootPrefix returns the source kind encoded in a syft document root
+// identifier, or "" for any other identifier.
+func documentRootPrefix(id spdx.ElementID) string {
+	match := documentRootIDPattern.FindStringSubmatch(string(id))
+	if match == nil {
+		return ""
+	}
+
+	return match[1]
+}
+
+// primaryPackagePurpose reports the purpose of the package the document
+// describes, falling back to the kind encoded in a syft document root
+// identifier when the field is absent.
+//
+// SPDX only gained primaryPackagePurpose in 2.3, so a document syft itself
+// wrote at 2.1 or 2.2 carries the field nowhere: it is dropped on the way out
+// and there is nothing to read back. Without the fallback, reading such a
+// document leaves the scan target sitting in the package list as though it
+// were an installed package, and the document name is lost with it.
+func primaryPackagePurpose(p *spdx.Package) string {
+	if p.PrimaryPackagePurpose != "" {
+		return p.PrimaryPackagePurpose
+	}
+
+	switch documentRootPrefix(p.PackageSPDXIdentifier) {
+	case prefixImage, prefixOCIModel, prefixSnap:
+		return spdxPrimaryPurposeContainer
+	case prefixDirectory, prefixFile:
+		return spdxPrimaryPurposeFile
+	}
+
+	return ""
+}
+
 func fileSource(p *spdx.Package) source.Description {
-	typeRegex := regexp.MustCompile("^DocumentRoot-([^-]+)-.*$")
-	typeName := typeRegex.ReplaceAllString(string(p.PackageSPDXIdentifier), "$1")
+	typeName := documentRootPrefix(p.PackageSPDXIdentifier)
 
 	var version string
 	var metadata any
@@ -191,7 +229,7 @@ func fileSource(p *spdx.Package) source.Description {
 	}
 
 	supplier := ""
-	if p.PackageSupplier.Supplier != helpers.NOASSERTION {
+	if p.PackageSupplier != nil && p.PackageSupplier.Supplier != helpers.NOASSERTION {
 		supplier = p.PackageSupplier.Supplier
 	}
 

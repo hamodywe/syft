@@ -144,18 +144,21 @@ func TestSupportedVersions(t *testing.T) {
 	dec := NewFormatDecoder()
 
 	relationshipOffsetPerVersion := map[string]int{
-		// the package representing the source gets a relationship from the source package to all other packages found
-		// these relationships cannot be removed until the primaryPackagePurpose info is available in 2.3
-		"2.1": 2,
-		"2.2": 2,
-		// the source-to-package relationships can be removed since the primaryPackagePurpose info is available in 2.3
+		// the document root package is recognised at every version: from 2.3 by its
+		// primaryPackagePurpose, and before that by its identifier, so the
+		// source-to-package relationships are removed either way
+		"2.1": 0,
+		"2.2": 0,
 		"2.3": 0,
+		"3.0": 0,
 	}
 
 	pkgCountOffsetPerVersion := map[string]int{
-		"2.1": 1, // the source is mapped as a package, but cannot distinguish it since the primaryPackagePurpose info is not available until 2.3
-		"2.2": 1, // the source is mapped as a package, but cannot distinguish it since the primaryPackagePurpose info is not available until 2.3
-		"2.3": 0, // the source package can be removed since the primaryPackagePurpose info is available
+		// likewise, the source is never left behind in the package list
+		"2.1": 0,
+		"2.2": 0,
+		"2.3": 0,
+		"3.0": 0,
 	}
 
 	for _, enc := range encs {
